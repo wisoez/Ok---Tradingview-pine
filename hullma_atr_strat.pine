@@ -1,0 +1,75 @@
+//|-------------------------------------------------------------------------------------------------|
+//|***************************** HullMA cross with ATR MA strategy *********************************|
+//|-------------------------------------------------------------------------------------------------|
+//@version=3
+strategy("HullMA/ATR", shorttitle="HMA/ATR", overlay=true, default_qty_type=strategy.percent_of_equity, 
+     default_qty_value=100, calc_on_order_fills=true, calc_on_every_tick=true, pyramiding=0)
+
+//--------------------------------------------------------------------------------------------------
+// Inputs
+//--------------------------------------------------------------------------------------------------
+m1          = input(title="From Month", defval=6, minval=1, maxval=12)              // Strat Backtest
+d1          = input(title="From Day", defval=1, minval = 1, maxval=31)              // Strat Backtest
+y1          = input(title="From Year", defval=2018, minval=2013)                    // Strat Backtest
+m2          = input(title="To Month", defval=1, minval=1, maxval=12)                // Strat Backtest
+d2          = input(title="To Day", defval=1, minval=1, maxval=31)                  // Strat Backtest
+y2          = input(title="To Year", defval=9999, minval=2017)                      // Strat Backtest
+t_start     = timestamp(y1, m1, d1, 00, 00)                                         // Strat Backtest
+t_end       = timestamp(y2, m2, d2, 23, 59)                                         // Strat Backtest
+hma_len     =input(title="Hull Length",type=integer,defval=50)
+atr_len     = input(title="ATR Length", defval=50, minval=1)
+atr_smooth  = input(title="ATR Smoothing", defval="RMA", options=["RMA", "SMA", "EMA", "WMA"])
+p           =input(ohlc4,type=source,title="Price data")
+
+//--------------------------------------------------------------------------------------------------
+// Functions
+//--------------------------------------------------------------------------------------------------
+window()=> 
+     time >= t_start and time <= t_end ? true : false
+hullma(src, length)=> 
+     wma(2*wma(src, length/2)-wma(src, length), round(sqrt(length)))
+ma(source, length)=> 
+    if atr_smooth == "RMA"
+        rma(p, length)
+    else
+        if atr_smooth == "SMA"
+            sma(p, length)
+        else
+            if atr_smooth == "EMA"
+                ema(p, length)
+            else
+                wma(p, length)
+                
+
+//--------------------------------------------------------------------------------------------------
+// Signal Lines
+// Long when: 1) HullMA cross-over, 2) price/MA cross-over, and 3) price>historic lvl
+// Short when: 1) HullMA cross-under, 2) price/MA cross-under, and 3) price<historic lvl
+//--------------------------------------------------------------------------------------------------
+
+// Create series
+hma_fast=hullma(p,hma_len)
+hma_slow=hullma(p[1],hma_len)   // lags by 1 bar
+ma_atr=ma(tr(true),hma_len)
+// Generate signals
+buy_signal = ma_atr<p and p>p[hma_len] and hma_fast>hma_slow
+sell_signal = ma_atr>p and p<p[hma_len] and hma_fast<hma_slow
+
+//--------------------------------------------------------------------------------------------------
+// Position Management
+//--------------------------------------------------------------------------------------------------
+if(hma_fast<hma_slow and window())
+    strategy.close("buy")
+if(hma_fast>hma_slow and window())
+    strategy.close("sell")
+if(buy_signal and window())
+    strategy.entry("buy", strategy.long, comment="BUY")
+if(sell_signal and window())
+    strategy.entry("sell", strategy.short, comment="SELL")
+
+//--------------------------------------------------------------------------------------------------
+// Plots
+//--------------------------------------------------------------------------------------------------
+plot(ma_atr,"ATR",color=fuchsia, linewidth=2, transp=75)
+plot(hma_fast,"HullMA Fast",color=blue, linewidth=2, transp=75)
+plot(hma_slow,"HullMA Slow",color=red, linewidth=2, transp=75)
